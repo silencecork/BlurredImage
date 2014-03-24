@@ -5,7 +5,7 @@ Description
 --------------
 
 Simple example that the bitmap set to BlurredImageView can be shown as blurred. 
-It also can play animation that from blurred to clear and back to blurred.
+It also can play animation that from blur to clear and back to blur.
 
 
 
