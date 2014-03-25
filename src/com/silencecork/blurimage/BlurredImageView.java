@@ -22,7 +22,7 @@ public class BlurredImageView extends ImageView {
 	
 	private static final int MSG_FADE_IN = 100;
 	private static final int MSG_FADE_OUT = 200;
-	private static final int DEFAULT_WAIT_TIME_BETWEEN_ANIMATION = 2000;
+	private static final int DEFAULT_WAIT_TIME_BETWEEN_ANIMATION = 5000;
 	private int mIndex = BlurImageUtil.KEY_FRAME_COUNT;
 	private int mWaitTime;
 	private int mColor;
@@ -36,6 +36,7 @@ public class BlurredImageView extends ImageView {
 	private boolean mIsPrepared;
 	private Paint mPaint;
 	private boolean mIsPlayDone = true;
+	private static final boolean IS_SCALE_BLURRED = false;
 	
 	private Handler mHandler = new Handler() {
 
@@ -111,8 +112,30 @@ public class BlurredImageView extends ImageView {
 			@Override
 			protected Void doInBackground(Bitmap... params) {
 				Bitmap b = params[0];
+				
+				Bitmap srcForBlur = b;
+				
+				if (IS_SCALE_BLURRED) {
+					int bitmapWidth = b.getWidth();
+					int bitmapHeight = b.getHeight();
+				
+					int baseSize = (bitmapWidth > bitmapHeight) ? bitmapWidth : bitmapHeight;
+					float scale = baseSize / 400.f;
+				
+					bitmapWidth = (int) (bitmapWidth / scale);
+					bitmapHeight = (int) (bitmapHeight / scale);
+				
+					srcForBlur = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888);
+					Canvas canvas = new Canvas(srcForBlur);
+					canvas.drawBitmap(b, null, new Rect(0, 0, bitmapWidth, bitmapHeight), new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG));
+				}
+				
 				for (int i = 1; i <= mDisplayedBitmaps.length; i++) {
-					mDisplayedBitmaps[i - 1] = mBlurImageUtil.fastblur(b, (int) mBlurImageUtil.blurRadiusAtFrame(i));
+					mDisplayedBitmaps[i - 1] = mBlurImageUtil.fastblur(srcForBlur, (int) mBlurImageUtil.blurRadiusAtFrame(i));
+				}
+				
+				if (srcForBlur != null && srcForBlur != b) { 
+					srcForBlur.recycle();
 				}
 				return null;
 			}
@@ -120,7 +143,7 @@ public class BlurredImageView extends ImageView {
 			@Override
 			protected void onPostExecute(Void result) {
 				mIsPrepared = true;
-				setImageDrawable(new DisplayDrawable(getContext().getResources(), mDisplayedBitmaps[mDisplayedBitmaps.length - 1]));
+				setImageDrawable(new BlurredDisplayDrawable(getContext().getResources(), mDisplayedBitmaps[mDisplayedBitmaps.length - 1]));
 			}
 			
 		};
@@ -139,6 +162,10 @@ public class BlurredImageView extends ImageView {
 				}
 			}
 		}
+		
+		if (mBlurImageLoader != null) {
+			mBlurImageLoader.cancel(true);
+		}
 	}
 	
 	@Override
@@ -152,14 +179,14 @@ public class BlurredImageView extends ImageView {
 			mColor = Color.argb(mInitAlphaMask - mProgressAlpha * (BlurImageUtil.KEY_FRAME_COUNT - mIndex), 0, 0, 0);
 			mPaint.setColor(mColor);
 			if (mDisplayedBitmaps[mIndex] != null) {
-				setImageDrawable(new DisplayDrawable(getContext().getResources(), mDisplayedBitmaps[mIndex]));
+				setImageDrawable(new BlurredDisplayDrawable(getContext().getResources(), mDisplayedBitmaps[mIndex]));
 			}
 			invalidate();
 			mHandler.sendEmptyMessageDelayed(100, 66);
 		} else {
 			mColor = Color.argb(mInitAlphaMask - mInitAlphaMask, 0, 0, 0);
 			mPaint.setColor(mColor);
-			setImageDrawable(new DisplayDrawable(getContext().getResources(), mBitmap));
+			setImageDrawable(new BlurredDisplayDrawable(getContext().getResources(), mBitmap));
 			invalidate();
 			mHandler.sendEmptyMessageDelayed(200, mWaitTime);
 			mIndex = 0;
@@ -171,7 +198,7 @@ public class BlurredImageView extends ImageView {
 			mColor = Color.argb(mProgressAlpha * mIndex, 0, 0, 0);
 			mPaint.setColor(mColor);
 			if (mDisplayedBitmaps[mIndex] != null) {
-				setImageDrawable(new DisplayDrawable(getContext().getResources(), mDisplayedBitmaps[mIndex]));
+				setImageDrawable(new BlurredDisplayDrawable(getContext().getResources(), mDisplayedBitmaps[mIndex]));
 			}
 			invalidate();
 			mHandler.sendEmptyMessageDelayed(200, 66);
@@ -183,10 +210,14 @@ public class BlurredImageView extends ImageView {
 		}
 	}
 	
-	class DisplayDrawable extends BitmapDrawable {
+	class BlurredDisplayDrawable extends BitmapDrawable {
 		
-		DisplayDrawable(Resources res, Bitmap b) {
+		private Bitmap mDisplayedBitmap;
+		
+		BlurredDisplayDrawable(Resources res, Bitmap b) {
 			super(res, b);
+			
+			mDisplayedBitmap = b;
 		}
 		
 		@Override
@@ -194,6 +225,16 @@ public class BlurredImageView extends ImageView {
 			super.draw(canvas);
 			Rect rect = getBounds();
 			canvas.drawRect(rect, mPaint);
+		}
+
+		@Override
+		public int getIntrinsicHeight() {
+			return (mBitmap != null) ? mBitmap.getHeight() : mDisplayedBitmap.getHeight();
+		}
+
+		@Override
+		public int getIntrinsicWidth() {
+			return (mBitmap != null) ? mBitmap.getWidth() : mDisplayedBitmap.getWidth();
 		}
 		
 	}
@@ -204,7 +245,7 @@ public class BlurredImageView extends ImageView {
 		public static final int KEY_FRAME_COUNT = 5;
 		private Interpolator mBlurInterpolator = new AccelerateDecelerateInterpolator();
 		private int mBlurredSampleSize  = 4;
-		public static final int MAX_SUPPORTED_BLUR_PIXELS = 40;
+		public static final int MAX_SUPPORTED_BLUR_PIXELS = 25;
 		private int mMaxPrescaledBlurPixels;
 		
 		public Bitmap fastblur(Bitmap sentBitmap, int radius) {
